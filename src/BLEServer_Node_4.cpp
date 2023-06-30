@@ -222,6 +222,7 @@ void loop() {
       jsonobject["TofX"] = TofX;
       jsonobject["TofY"] = TofZ;
       jsonobject["TofZ"] = TofZ;
+      datakirim = "";
       serializeJson(doc, datakirim);
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -275,6 +276,7 @@ void loop() {
       jsonobject1["TofX"] = TofX;
       jsonobject1["TofY"] = TofY;
       jsonobject1["TofZ"] = TofZ;
+      datakirim = "";
       serializeJson(doc, datakirim);
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -316,6 +318,7 @@ void loop() {
       jsonobject1["TofX"] = TofX;
       jsonobject1["TofY"] = TofY;
       jsonobject1["TofZ"] = TofZ;
+      datakirim = "";
       serializeJson(doc, datakirim);
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -361,6 +364,7 @@ void loop() {
       jsonobject1["TofX"] = TofX;
       jsonobject1["TofY"] = TofY;
       jsonobject1["TofZ"] = TofZ;
+      datakirim = "";
       serializeJson(doc, datakirim);
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -412,6 +416,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -446,6 +451,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -484,6 +490,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -522,6 +529,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -558,6 +566,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -594,6 +603,7 @@ void loop() {
         jsonobject2["TofX"] = TofX;
         jsonobject2["TofY"] = TofY;
         jsonobject2["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -642,6 +652,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -686,6 +697,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -730,6 +742,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -774,6 +787,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -818,6 +832,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
@@ -862,6 +877,7 @@ void loop() {
         jsonobject3["TofX"] = TofX;
         jsonobject3["TofY"] = TofY;
         jsonobject3["TofZ"] = TofZ;
+        datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
