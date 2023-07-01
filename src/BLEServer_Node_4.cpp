@@ -34,11 +34,11 @@ uint8_t dataBuffer[MAX_PAYLOAD_SIZE];  //MAX_PAYLOAD_SIZE is defined in RF24Netw
 #define LED_BUILTIN 2
 
 //alamat node
-const uint16_t this_node = 03;   // alamat node ini (NODE_4) dalam format Octal
-const uint16_t NODE_1 = 00;  // Alamat NODE_1 dalam format Octal
-const uint16_t NODE_2 = 01; // Alamat NODE_2 dalam format Octal
-const uint16_t NODE_3 = 02; // Alamat NODE_3 dalam format Octal
-const uint16_t NODE_5 = 04; // Alamat NODE_5 dalam format Octal
+const uint16_t this_node = 04;   // alamat node ini (NODE_4) dalam format Octal
+const uint16_t NODE_1 = 01;  // Alamat NODE_1 dalam format Octal
+const uint16_t NODE_2 = 02; // Alamat NODE_2 dalam format Octal
+const uint16_t NODE_3 = 03; // Alamat NODE_3 dalam format Octal
+const uint16_t NODE_5 = 00; // Alamat NODE_5 dalam format Octal
 
 //variabel DATA
 int node_asal = 4;
@@ -201,7 +201,7 @@ void loop() {
     RF24NetworkHeader header;  // If so, grab it and print it out
     uint16_t payloadSize = network.peek(header);     // Use peek() to get the size of the payload
     char terima_loop[payloadSize]; //buat variabel untuk nerima data array
-    network.read(header, &terima_loop, sizeof(terima_loop));
+    network.read(header, &terima_loop, payloadSize);
     dataterima = "";
     for (uint32_t i = 0; i < payloadSize; i++){
       dataterima += terima_loop[i];
