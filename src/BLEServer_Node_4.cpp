@@ -42,9 +42,9 @@ const uint16_t NODE_5 = 00; // Alamat NODE_5 dalam format Octal
 
 //variabel DATA
 int node_asal = 4;
-unsigned long TofX = 5; // data pitch
-unsigned long TofY = 10; // data roll
-unsigned long TofZ = 15; // data frekuensi
+unsigned long TofX = 5; // data TofX
+unsigned long TofY = 10; // data TofY
+unsigned long TofZ = 15; // data TofZ
 String datakirim;
 String dataterima;
 int count = 0;
@@ -371,16 +371,16 @@ void loop() {
       Serial.print("Received packet from NODE 3");
       JsonObject NodeID_3 = doc[0];
       int aNodeID_3 = NodeID_3["NodeID"];
-      int Pitch = NodeID_3["Pitch"];
-      int Roll = NodeID_3["Roll"];
-      int Frekuensi = NodeID_3["Frekuensi"];
+      int usX = NodeID_3["usX"];
+      int usY = NodeID_3["usY"];
+      int usZ = NodeID_3["usZ"];
       uint32_t bUnixtime = NodeID_3["unixtime"];
       JsonArray jsonarray = doc.to<JsonArray>();
       JsonObject jsonobject = jsonarray.createNestedObject();
       jsonobject["NodeID"] = aNodeID_3;
-      jsonobject["Pitch"] = Pitch;
-      jsonobject["Roll"] = Roll;
-      jsonobject["Frekuensi"] = Frekuensi;
+      jsonobject["usX"] = usX;
+      jsonobject["usY"] = usY;
+      jsonobject["usZ"] = usZ;
       jsonobject["Unixtime"] = bUnixtime;
       JsonObject jsonobject1 = jsonarray.createNestedObject();
       jsonobject1["NodeID"] = node_asal;
@@ -507,9 +507,9 @@ void loop() {
         uint32_t gUnixtime = NodeID_1["Unixtime"];
         JsonObject NodeID_3 = doc[1];
         int bNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t hUnixtime = NodeID_3["Unixtime"];
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
@@ -519,9 +519,9 @@ void loop() {
         jsonobject["Unixtime"] = gUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = bNodeID_3;
-        jsonobject1["Pitch"] = Pitch;
-        jsonobject1["Roll"] = Roll;
-        jsonobject1["Frekuensi"] = Frekuensi;
+        jsonobject1["usX"] = usX;
+        jsonobject1["usY"] = usY;
+        jsonobject1["usZ"] = usZ;
         jsonobject1["Unixtime"] = hUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = node_asal;
@@ -546,9 +546,9 @@ void loop() {
       if (jumlahnode[0] == 3 && jumlahnode[1] == 1) {
         JsonObject NodeID_3 = doc[0];
         int cNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t iUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_1 = doc[1];
         int eNodeID_1 = NodeID_1["NodeID"];
@@ -558,9 +558,9 @@ void loop() {
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
         jsonobject["NodeID"] = cNodeID_3;
-        jsonobject["Pitch"] = Pitch;
-        jsonobject["Roll"] = Roll;
-        jsonobject["Frekuensi"] = Frekuensi;
+        jsonobject["usX"] = usX;
+        jsonobject["usY"] = usY;
+        jsonobject["usZ"] = usZ;
         jsonobject["Unixtime"] = iUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = eNodeID_1;
@@ -590,9 +590,9 @@ void loop() {
       if (jumlahnode[0] == 3 && jumlahnode[1] == 2) {
         JsonObject NodeID_3 = doc[0];
         int dNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t kUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_2 = doc[1];
         int dNodeID_2 = NodeID_2["NodeID"];
@@ -601,9 +601,9 @@ void loop() {
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
         jsonobject["NodeID"] = dNodeID_3;
-        jsonobject["Pitch"] = Pitch;
-        jsonobject["Roll"] = Roll;
-        jsonobject["Frekuensi"] = Frekuensi;
+        jsonobject["usX"] = usX;
+        jsonobject["usY"] = usY;
+        jsonobject["usZ"] = usZ;
         jsonobject["Unixtime"] = kUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = dNodeID_2;
@@ -636,9 +636,9 @@ void loop() {
         uint32_t mUnixtime = NodeID_2["Unixtime"];
         JsonObject NodeID_3 = doc[1];
         int eNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t nUnixtime = NodeID_3["Unixtime"];
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
@@ -647,9 +647,9 @@ void loop() {
         jsonobject["Unixtime"] = mUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = eNodeID_3;
-        jsonobject1["Pitch"] = Pitch;
-        jsonobject1["Roll"] = Roll;
-        jsonobject1["Frekuensi"] = Frekuensi;
+        jsonobject1["usX"] = usX;
+        jsonobject1["usY"] = usY;
+        jsonobject1["usZ"] = usZ;
         jsonobject1["Unixtime"] = nUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = node_asal;
@@ -687,9 +687,9 @@ void loop() {
         uint32_t pUnixtime = NodeID_2["Unixtime"];
         JsonObject NodeID_3 = doc[2];
         int fNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t qUnixtime = NodeID_3["Unixtime"];
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
@@ -703,9 +703,9 @@ void loop() {
         jsonobject1["Unixtime"] = pUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = fNodeID_3;
-        jsonobject2["Pitch"] = Pitch;
-        jsonobject2["Roll"] = Roll;
-        jsonobject2["Frekuensi"] = Frekuensi;
+        jsonobject2["usX"] = usX;
+        jsonobject2["usY"] = usY;
+        jsonobject2["usZ"] = usZ;
         jsonobject2["Unixtime"] = qUnixtime;
         JsonObject jsonobject3 = jsonarray.createNestedObject();
         jsonobject3["NodeID"] = node_asal;
@@ -735,9 +735,9 @@ void loop() {
         uint32_t rUnixtime = NodeID_1["Unixtime"];
         JsonObject NodeID_3 = doc[1];
         int gNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t sUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_2 = doc[2];
         int gNodeID_2 = NodeID_2["NodeID"];
@@ -751,9 +751,9 @@ void loop() {
         jsonobject["Unixtime"] = rUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = gNodeID_3;
-        jsonobject1["Pitch"] = Pitch;
-        jsonobject1["Roll"] = Roll;
-        jsonobject1["Frekuensi"] = Frekuensi;
+        jsonobject1["usX"] = usX;
+        jsonobject1["usY"] = usY;
+        jsonobject1["usZ"] = usZ;
         jsonobject1["Unixtime"] = sUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = gNodeID_2;
@@ -791,9 +791,9 @@ void loop() {
         uint32_t vUnixtime = NodeID_1["Unixtime"];
         JsonObject NodeID_3 = doc[2];
         int hNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t wUnixtime = NodeID_3["Unixtime"];
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
@@ -807,9 +807,9 @@ void loop() {
         jsonobject1["Unixtime"] = vUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = hNodeID_3;
-        jsonobject2["Pitch"] = Pitch;
-        jsonobject2["Roll"] = Roll;
-        jsonobject2["Frekuensi"] = Frekuensi;
+        jsonobject2["usX"] = usX;
+        jsonobject2["usY"] = usY;
+        jsonobject2["usZ"] = usZ;
         jsonobject2["Unixtime"] = wUnixtime;
         JsonObject jsonobject3 = jsonarray.createNestedObject();
         jsonobject3["NodeID"] = node_asal;
@@ -838,9 +838,9 @@ void loop() {
         uint32_t xUnixtime = NodeID_2["Unixtime"];
         JsonObject NodeID_3 = doc[1];
         int iNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t yUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_1 = doc[2];
         int iNodeID_1 = NodeID_1["NodeID"];
@@ -854,9 +854,9 @@ void loop() {
         jsonobject["Unixtime"] = xUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = iNodeID_3;
-        jsonobject1["Pitch"] = Pitch;
-        jsonobject1["Roll"] = Roll;
-        jsonobject1["Frekuensi"] = Frekuensi;
+        jsonobject1["usX"] = usX;
+        jsonobject1["usY"] = usY;
+        jsonobject1["usZ"] = usZ;
         jsonobject1["Unixtime"] = yUnixtime;
         JsonObject jsonobject2 = jsonarray.createNestedObject();
         jsonobject2["NodeID"] = iNodeID_1;
@@ -886,9 +886,9 @@ void loop() {
       if(jumlahnode[0] == 3 && jumlahnode[1] == 2 && jumlahnode[2] == 1){
         JsonObject NodeID_3 = doc[0];
         int jNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t aaUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_2 = doc[1];
         int jNodeID_2 = NodeID_2["NodeID"];
@@ -902,9 +902,9 @@ void loop() {
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
         jsonobject["NodeID"] = jNodeID_3;
-        jsonobject["Pitch"] = Pitch;
-        jsonobject["Roll"] = Roll;
-        jsonobject["Frekuensi"] = Frekuensi;
+        jsonobject["usX"] = usX;
+        jsonobject["usY"] = usY;
+        jsonobject["usZ"] = usZ;
         jsonobject["Unixtime"] = aaUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = jNodeID_2;
@@ -938,9 +938,9 @@ void loop() {
       if(jumlahnode[0] == 3 && jumlahnode[1] == 1 && jumlahnode[2] == 2){
         JsonObject NodeID_3 = doc[0];
         int kNodeID_3 = NodeID_3["NodeID"];
-        int Pitch = NodeID_3["Pitch"];
-        int Roll = NodeID_3["Roll"];
-        int Frekuensi = NodeID_3["Frekuensi"];
+        int usX = NodeID_3["usX"];
+        int usY = NodeID_3["usY"];
+        int usZ = NodeID_3["usZ"];
         uint32_t adUnixtime = NodeID_3["Unixtime"];
         JsonObject NodeID_1 = doc[1];
         int kNodeID_1 = NodeID_1["NodeID"];
@@ -954,9 +954,9 @@ void loop() {
         JsonArray jsonarray = doc.to<JsonArray>();
         JsonObject jsonobject = jsonarray.createNestedObject();
         jsonobject["NodeID"] = kNodeID_3;
-        jsonobject["Pitch"] = Pitch;
-        jsonobject["Roll"] = Roll;
-        jsonobject["Frekuensi"] = Frekuensi;
+        jsonobject["usX"] = usX;
+        jsonobject["usY"] = usY;
+        jsonobject["usZ"] = usZ;
         jsonobject["Unixtime"] = adUnixtime;
         JsonObject jsonobject1 = jsonarray.createNestedObject();
         jsonobject1["NodeID"] = kNodeID_1;
