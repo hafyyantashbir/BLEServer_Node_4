@@ -11,6 +11,7 @@
 #include <SPI.h>
 #include <RF24.h>
 #include <RF24Network.h>
+#include <RF24Mesh.h>
 #include "printf.h"
 
 //library BLE
@@ -33,16 +34,17 @@ char days[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Fri
 //konfigurasi NRF24L01
 RF24 radio(4, 5); //(pin CE, pin CSN)
 RF24Network network(radio);      // Network uses that radio
+RF24Mesh mesh(radio, network);
 uint8_t dataBuffer[MAX_PAYLOAD_SIZE];  //MAX_PAYLOAD_SIZE is defined in RF24Network_config.h
 #define LED_BUILTIN 2
 
 //alamat node
-const uint16_t this_node = 04;   // alamat node ini (NODE_4) dalam format Octal
-const uint16_t NODE_Master = 00; // Alamat NODE_Master dalam format Octal
-const uint16_t NODE_1 = 01;  // Alamat NODE_1 dalam format Octal
-const uint16_t NODE_2 = 02; // Alamat NODE_2 dalam format Octal
-const uint16_t NODE_3 = 03; // Alamat NODE_3 dalam format Octal
-const uint16_t NODE_5 = 05; // Alamat NODE_5 dalam format Octal
+#define NODE_Master 0
+#define this_node 4
+#define NODE_1 1
+#define NODE_2 2
+#define NODE_3 3
+#define NODE_5 5
 
 //variabel DATA
 int node_asal = 4;
@@ -147,16 +149,22 @@ void setup() {
   while (!Serial) {
     // some boards need this because of native USB capability
   }
-  Serial.println(F("RF24Network/examples/helloworld_rx/"));
+  mesh.setNodeID(this_node); //Set the Node ID
+  Serial.println(F("Connecting to the mesh..."));
 
-  if (!radio.begin()) {
-    Serial.println(F("Radio hardware not responding!"));
-    while (1) {
-      // hold in infinite loop
+  if (!mesh.begin()){
+    if (radio.isChipConnected()){
+      do {
+        // mesh.renewAddress() will return MESH_DEFAULT_ADDRESS on failure to connect
+        Serial.println(F("Could not connect to network.\nConnecting to the mesh..."));
+      } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+    } else {
+      Serial.println(F("Radio hardware not responding."));
+      while (1) {
+        // hold in an infinite loop
+      }
     }
   }
-  radio.setChannel(90);
-  network.begin(/*node address*/ this_node);
   printf_begin();        // needed for RF24* libs' internal printf() calls
   radio.printDetails();  // requires printf support
 
@@ -199,7 +207,7 @@ void loop() {
   // Print unused stack for the task that is running loop() - the same as for setup()
   Serial.printf("\nLoop() - Free Stack Space: %d", uxTaskGetStackHighWaterMark(NULL));
   
-  network.update();  // Check the network regularly
+  mesh.update();  // Check the network regularly
   DateTime now = rtc.now();
   StaticJsonDocument<512> doc;
 
@@ -260,13 +268,10 @@ void loop() {
       serializeJson(doc, datakirim);
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-      BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-      network.update();
+      BLEScanResults foundDevices = pBLEScan->start(scanTime, false);      
       if (NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_3_RSSI && NODE_1_RSSI >= NODE_5_RSSI) {
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = node_asal;
@@ -284,10 +289,8 @@ void loop() {
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
           if (NODE_2_RSSI >= NODE_3_RSSI && NODE_2_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -309,10 +312,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if (NODE_3_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -339,10 +340,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -375,17 +374,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_5_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -412,10 +416,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -448,19 +450,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if (NODE_3_RSSI >= NODE_2_RSSI && NODE_3_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -484,10 +491,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if( NODE_2_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -514,10 +519,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -550,17 +553,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_5_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -589,10 +597,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -625,19 +631,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if (NODE_5_RSSI >= NODE_2_RSSI && NODE_5_RSSI >= NODE_3_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -661,10 +672,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_2_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -691,10 +700,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -727,17 +734,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_3_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -766,10 +778,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -802,9 +812,16 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
@@ -816,10 +833,8 @@ void loop() {
         digitalWrite(LED_BUILTIN, LOW);
       }
       else if (NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_3_RSSI && NODE_2_RSSI >= NODE_5_RSSI) {
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = node_asal;
@@ -836,10 +851,8 @@ void loop() {
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
           if(NODE_1_RSSI >= NODE_3_RSSI && NODE_1_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -861,10 +874,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_3_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -891,10 +902,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -927,17 +936,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_5_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -964,10 +978,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1000,19 +1012,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1035,10 +1052,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1065,10 +1080,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1101,17 +1114,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_5_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1139,10 +1157,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1175,19 +1191,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_3_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1210,10 +1231,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1240,10 +1259,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1276,17 +1293,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_3_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1314,10 +1336,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1350,9 +1370,16 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
@@ -1364,10 +1391,8 @@ void loop() {
         digitalWrite(LED_BUILTIN, LOW);
       }
       else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_2_RSSI && NODE_3_RSSI >= NODE_5_RSSI) {
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = node_asal;
@@ -1386,10 +1411,8 @@ void loop() {
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
           if(NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1413,10 +1436,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_2_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1443,10 +1464,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1479,17 +1498,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_5_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1518,10 +1542,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1554,19 +1576,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if(NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_5_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1589,10 +1616,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_5_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1619,10 +1644,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_5);
-                  bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                  if(!NODE_5){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1655,17 +1678,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_5_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_5);
-                bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-                if(!NODE_5){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1693,10 +1721,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1729,19 +1755,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if(NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_2_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1766,10 +1797,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1798,10 +1827,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1834,17 +1861,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if (NODE_2_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -1872,10 +1904,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -1908,9 +1938,16 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
@@ -1922,10 +1959,8 @@ void loop() {
         digitalWrite(LED_BUILTIN, LOW);
       }
       else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_2_RSSI && NODE_5_RSSI >= NODE_3_RSSI) {
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = node_asal;
@@ -1944,10 +1979,8 @@ void loop() {
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
           if(NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_3_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -1971,10 +2004,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_2_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2001,10 +2032,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2037,17 +2066,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_3_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2076,10 +2110,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2112,19 +2144,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if(NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_3_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -2147,10 +2184,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_3_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2177,10 +2212,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_3);
-                  bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                  if(!NODE_3){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2213,17 +2246,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_3_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_3);
-                bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-                if(!NODE_3){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2251,10 +2289,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2287,19 +2323,24 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
             }
           }
           else if(NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_2_RSSI){
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = node_asal;
@@ -2324,10 +2365,8 @@ void loop() {
               char kirim_loop[datakirim.length() + 1];
               datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
               if(NODE_1_RSSI >= NODE_2_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_1);
-                bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                if(!NODE_1){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2356,10 +2395,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_2);
-                  bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                  if(!NODE_2){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2392,17 +2429,22 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
               else if(NODE_2_RSSI >= NODE_1_RSSI){
-                RF24NetworkHeader header(/*to node*/ NODE_2);
-                bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-                if(!NODE_2){
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                   JsonArray jsonarray = doc.to<JsonArray>();
                   JsonObject jsonobject = jsonarray.createNestedObject();
                   jsonobject["NodeID"] = node_asal;
@@ -2430,10 +2472,8 @@ void loop() {
                   serializeJson(doc, datakirim);
                   char kirim_loop[datakirim.length() + 1];
                   datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                  RF24NetworkHeader header(/*to node*/ NODE_1);
-                  bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                  Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-                  if(!NODE_1){
+                  if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                    Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                     JsonArray jsonarray = doc.to<JsonArray>();
                     JsonObject jsonobject = jsonarray.createNestedObject();
                     jsonobject["NodeID"] = node_asal;
@@ -2466,9 +2506,16 @@ void loop() {
                     serializeJson(doc, datakirim);
                     char kirim_loop[datakirim.length() + 1];
                     datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                    RF24NetworkHeader header(/*to node*/ NODE_Master);
-                    bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                    Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                    if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                      Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                      if (!mesh.checkConnection()) {
+                        do {
+                          Serial.println(F("Reconnecting to mesh network..."));
+                        } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                      } else {
+                        Serial.println(F("Send fail, Test OK"));
+                      }
+                    }
                   }
                 }
               }
@@ -2505,12 +2552,9 @@ void loop() {
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
       BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-      if (NODE_2_RSSI >= NODE_3_RSSI && NODE_2_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+      if (NODE_2_RSSI >= NODE_3_RSSI && NODE_2_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_1;
@@ -2531,12 +2575,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_3_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          if(NODE_3_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -2562,12 +2603,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -2599,20 +2637,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -2638,12 +2679,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -2675,11 +2713,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -2688,12 +2732,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_3_RSSI >= NODE_2_RSSI && NODE_3_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+      else if (NODE_3_RSSI >= NODE_2_RSSI && NODE_3_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_1;
@@ -2716,12 +2757,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_2_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          if(NODE_2_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -2747,12 +2785,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -2784,20 +2819,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -2825,12 +2863,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -2862,11 +2897,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -2875,12 +2916,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_5_RSSI >= NODE_2_RSSI && NODE_5_RSSI >= NODE_3_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+      else if (NODE_5_RSSI >= NODE_2_RSSI && NODE_5_RSSI >= NODE_3_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_1;
@@ -2903,12 +2941,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_2_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          if(NODE_2_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -2934,12 +2969,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -2971,20 +3003,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_3_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          else if(NODE_3_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_1;
@@ -3012,12 +3047,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_1;
@@ -3049,11 +3081,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -3085,12 +3123,9 @@ void loop() {
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
       BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-      if (NODE_1_RSSI >= NODE_3_RSSI && NODE_1_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+      if (NODE_1_RSSI >= NODE_3_RSSI && NODE_1_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_2;
@@ -3111,12 +3146,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_3_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          if(NODE_3_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3142,12 +3174,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3179,20 +3208,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3218,12 +3250,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3255,11 +3284,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -3268,12 +3303,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+      else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_2;
@@ -3295,12 +3327,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3326,12 +3355,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3363,20 +3389,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3403,12 +3432,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3440,11 +3466,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -3453,12 +3485,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_3_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+      else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_3_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_2;
@@ -3480,12 +3509,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3511,12 +3537,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3548,20 +3571,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_3_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          else if(NODE_3_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_2;
@@ -3588,12 +3614,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_2;
@@ -3625,11 +3648,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -3665,12 +3694,9 @@ void loop() {
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
       BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-      if (NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+      if (NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_3;
@@ -3693,12 +3719,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_2_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          if(NODE_2_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -3724,12 +3747,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -3761,20 +3781,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -3802,12 +3825,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -3839,11 +3859,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -3852,12 +3878,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_5_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+      else if (NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_5_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_3;
@@ -3879,12 +3902,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_5_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_5_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -3910,12 +3930,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_5);
-              bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-              if(!NODE_5){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -3947,20 +3964,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_5_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+          else if(NODE_5_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -3987,12 +4007,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -4024,11 +4041,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -4037,12 +4060,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_2_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+      else if (NODE_5_RSSI >= NODE_1_RSSI && NODE_5_RSSI >= NODE_2_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_3;
@@ -4066,12 +4086,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -4099,12 +4116,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -4136,20 +4150,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_2_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          else if(NODE_2_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_3;
@@ -4176,12 +4193,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_3;
@@ -4213,11 +4227,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -4253,12 +4273,9 @@ void loop() {
       char kirim_loop[datakirim.length() + 1];
       datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
       BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-      if (NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_3_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+      if (NODE_1_RSSI >= NODE_2_RSSI && NODE_1_RSSI >= NODE_3_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_5;
@@ -4281,12 +4298,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_2_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          if(NODE_2_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4312,12 +4326,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4349,20 +4360,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_3_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          else if(NODE_3_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4390,12 +4404,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4427,11 +4438,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -4440,12 +4457,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_3_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+      else if (NODE_2_RSSI >= NODE_1_RSSI && NODE_2_RSSI >= NODE_3_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_5;
@@ -4467,12 +4481,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_3_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_3_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4498,12 +4509,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_3);
-              bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-              if(!NODE_3){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4535,20 +4543,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_3_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+          else if(NODE_3_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4575,12 +4586,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4612,11 +4620,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -4625,12 +4639,9 @@ void loop() {
         }
         digitalWrite(LED_BUILTIN, LOW);
       }
-      else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_2_RSSI) {
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+      else if (NODE_3_RSSI >= NODE_1_RSSI && NODE_3_RSSI >= NODE_2_RSSI) {        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = aNodeID_5;
@@ -4654,12 +4665,9 @@ void loop() {
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
           datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          if(NODE_1_RSSI >= NODE_2_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+          if(NODE_1_RSSI >= NODE_2_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4687,12 +4695,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_2);
-              bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-              if(!NODE_2){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4724,20 +4729,23 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
-          else if(NODE_2_RSSI >= NODE_1_RSSI){
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+          else if(NODE_2_RSSI >= NODE_1_RSSI){            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = aNodeID_5;
@@ -4764,12 +4772,9 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_1);
-              bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-              if(!NODE_1){
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
                 JsonArray jsonarray = doc.to<JsonArray>();
                 JsonObject jsonobject = jsonarray.createNestedObject();
                 jsonobject["NodeID"] = aNodeID_5;
@@ -4801,11 +4806,17 @@ void loop() {
                 datakirim = "";
                 serializeJson(doc, datakirim);
                 char kirim_loop[datakirim.length() + 1];
-                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-                network.update();
-                RF24NetworkHeader header(/*to node*/ NODE_Master);
-                bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-                Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+                datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));                
+                if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                  Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                  if (!mesh.checkConnection()) {
+                    do {
+                      Serial.println(F("Reconnecting to mesh network..."));
+                    } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                  } else {
+                    Serial.println(F("Send fail, Test OK"));
+                  }
+                }
               }
             }
           }
@@ -4848,12 +4859,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_3_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        if(NODE_3_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = bNodeID_1;
@@ -4879,12 +4887,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = bNodeID_1;
@@ -4916,23 +4921,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_5_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if(NODE_5_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = bNodeID_1;
@@ -4958,12 +4966,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = bNodeID_1;
@@ -4995,11 +5000,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -5041,12 +5052,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_2_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        if(NODE_2_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = dNodeID_1;
@@ -5072,12 +5080,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = dNodeID_1;
@@ -5109,23 +5114,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_5_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if(NODE_5_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = dNodeID_1;
@@ -5153,12 +5161,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = dNodeID_1;
@@ -5190,11 +5195,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -5236,12 +5247,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_2_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        if(NODE_2_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = ddNodeID_1;
@@ -5267,12 +5275,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = ddNodeID_1;
@@ -5304,23 +5309,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_3_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        else if(NODE_3_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = ddNodeID_1;
@@ -5348,12 +5356,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = ddNodeID_1;
@@ -5385,11 +5390,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -5427,12 +5438,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_3_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        if(NODE_3_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = cNodeID_2;
@@ -5458,12 +5466,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = cNodeID_2;
@@ -5495,23 +5500,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_5_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if(NODE_5_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = cNodeID_2;
@@ -5537,12 +5545,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = cNodeID_2;
@@ -5574,11 +5579,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -5618,12 +5629,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eNodeID_2;
@@ -5649,12 +5657,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eNodeID_2;
@@ -5686,23 +5691,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if (NODE_5_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if (NODE_5_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eNodeID_2;
@@ -5729,12 +5737,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eNodeID_2;
@@ -5766,11 +5771,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -5810,12 +5821,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eeNodeID_2;
@@ -5841,12 +5849,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eeNodeID_2;
@@ -5878,23 +5883,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if (NODE_3_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        else if (NODE_3_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eeNodeID_2;
@@ -5921,12 +5929,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eeNodeID_2;
@@ -5958,11 +5963,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6004,12 +6015,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_2_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        if(NODE_2_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = cNodeID_3;
@@ -6035,12 +6043,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = cNodeID_3;
@@ -6072,23 +6077,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_5_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if(NODE_5_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = cNodeID_3;
@@ -6116,12 +6124,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = cNodeID_3;
@@ -6153,11 +6158,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6197,12 +6208,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_5_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_5_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = dNodeID_3;
@@ -6228,12 +6236,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_5);
-            bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-            if(!NODE_5){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = dNodeID_3;
@@ -6265,23 +6270,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_5_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_5);
-          bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-          if(!NODE_5){
+        else if(NODE_5_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = dNodeID_3;
@@ -6308,12 +6316,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = dNodeID_3;
@@ -6345,11 +6350,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6393,12 +6404,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = ddNodeID_3;
@@ -6426,12 +6434,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = ddNodeID_3;
@@ -6463,23 +6468,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_2_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        else if(NODE_2_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = ddNodeID_3;
@@ -6506,12 +6514,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = ddNodeID_3;
@@ -6543,11 +6548,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6589,12 +6600,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_2_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        if(NODE_2_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eNodeID_5;
@@ -6620,12 +6628,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eNodeID_5;
@@ -6657,23 +6662,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_3_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        else if(NODE_3_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = eNodeID_5;
@@ -6701,12 +6709,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = eNodeID_5;
@@ -6738,11 +6743,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6782,12 +6793,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_3_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_3_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = fNodeID_5;
@@ -6813,12 +6821,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_3);
-            bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-            if(!NODE_3){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = fNodeID_5;
@@ -6850,23 +6855,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_3_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_3);
-          bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-          if(!NODE_3){
+        else if(NODE_3_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = fNodeID_5;
@@ -6893,12 +6901,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = fNodeID_5;
@@ -6930,11 +6935,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -6978,12 +6989,9 @@ void loop() {
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
         datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        if(NODE_1_RSSI >= NODE_2_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_1);
-          bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-          if(!NODE_1){
+        if(NODE_1_RSSI >= NODE_2_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = gNodeID_5;
@@ -7011,12 +7019,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_2);
-            bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-            if(!NODE_2){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = gNodeID_5;
@@ -7048,23 +7053,26 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
           }
           digitalWrite(LED_BUILTIN, LOW);
         }
-        else if(NODE_2_RSSI >= NODE_1_RSSI){
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_2);
-          bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-          if(!NODE_2){
+        else if(NODE_2_RSSI >= NODE_1_RSSI){          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
             JsonArray jsonarray = doc.to<JsonArray>();
             JsonObject jsonobject = jsonarray.createNestedObject();
             jsonobject["NodeID"] = gNodeID_5;
@@ -7091,12 +7099,9 @@ void loop() {
             datakirim = "";
             serializeJson(doc, datakirim);
             char kirim_loop[datakirim.length() + 1];
-            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-            network.update();
-            RF24NetworkHeader header(/*to node*/ NODE_1);
-            bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-            Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-            if(!NODE_1){
+            datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));            
+            if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+              Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
               JsonArray jsonarray = doc.to<JsonArray>();
               JsonObject jsonobject = jsonarray.createNestedObject();
               jsonobject["NodeID"] = gNodeID_5;
@@ -7128,11 +7133,17 @@ void loop() {
               datakirim = "";
               serializeJson(doc, datakirim);
               char kirim_loop[datakirim.length() + 1];
-              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-              network.update();
-              RF24NetworkHeader header(/*to node*/ NODE_Master);
-              bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-              Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+              datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));              
+              if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+                Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+                if (!mesh.checkConnection()) {
+                  do {
+                    Serial.println(F("Reconnecting to mesh network..."));
+                  } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+                } else {
+                  Serial.println(F("Send fail, Test OK"));
+                }
+              }
             }
             digitalWrite(LED_BUILTIN, HIGH);
             delay(100);
@@ -7185,12 +7196,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = fNodeID_1;
@@ -7222,11 +7230,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7273,12 +7287,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = ffNodeID_1;
@@ -7310,11 +7321,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7361,12 +7378,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = gNodeID_1;
@@ -7398,11 +7412,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7453,12 +7473,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = gNodeID_1;
@@ -7490,11 +7507,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7541,12 +7564,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = gNodeID_1;
@@ -7578,11 +7598,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7633,12 +7659,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = gNodeID_1;
@@ -7670,11 +7693,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7721,12 +7750,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = hNodeID_2;
@@ -7758,11 +7784,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7809,12 +7841,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = hNodeID_2;
@@ -7846,11 +7875,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7897,12 +7932,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = iNodeID_2;
@@ -7934,11 +7966,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -7987,12 +8025,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = iNodeID_2;
@@ -8024,11 +8059,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8075,12 +8116,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = iNodeID_2;
@@ -8112,11 +8150,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8165,12 +8209,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = iNodeID_2;
@@ -8202,11 +8243,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8253,12 +8300,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = kNodeID_3;
@@ -8290,11 +8334,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8345,12 +8395,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = kNodeID_3;
@@ -8382,11 +8429,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8433,12 +8486,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_5);
-        bool NODE_5 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_5 ? F("DATA TERKIRIM KE NODE 5") : F("GAGAL TERKIRIM KE NODE 5"));
-        if(!NODE_5){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_5)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 5"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_3;
@@ -8470,11 +8520,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8523,12 +8579,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_3;
@@ -8560,11 +8613,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8615,12 +8674,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_3;
@@ -8652,11 +8708,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8705,12 +8767,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_3;
@@ -8742,11 +8801,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8793,12 +8858,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -8830,11 +8892,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8885,12 +8953,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -8922,11 +8987,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -8973,12 +9044,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_3);
-        bool NODE_3 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_3 ? F("DATA TERKIRIM KE NODE 3") : F("GAGAL TERKIRIM KE NODE 3"));
-        if(!NODE_3){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_3)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 3"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -9010,11 +9078,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -9063,12 +9137,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -9100,11 +9171,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -9155,12 +9232,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_2);
-        bool NODE_2 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_2 ? F("DATA TERKIRIM KE NODE 2") : F("GAGAL TERKIRIM KE NODE 2"));
-        if(!NODE_2){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_2)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 2"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -9192,11 +9266,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -9245,12 +9325,9 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_1);
-        bool NODE_1 = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_1 ? F("DATA TERKIRIM KE NODE 1") : F("GAGAL TERKIRIM KE NODE 1"));
-        if(!NODE_1){
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_1)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE 1"));
           JsonArray jsonarray = doc.to<JsonArray>();
           JsonObject jsonobject = jsonarray.createNestedObject();
           jsonobject["NodeID"] = jNodeID_5;
@@ -9282,11 +9359,17 @@ void loop() {
           datakirim = "";
           serializeJson(doc, datakirim);
           char kirim_loop[datakirim.length() + 1];
-          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-          network.update();
-          RF24NetworkHeader header(/*to node*/ NODE_Master);
-          bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-          Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
+          datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));          
+          if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+            Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+            if (!mesh.checkConnection()) {
+              do {
+                Serial.println(F("Reconnecting to mesh network..."));
+              } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+            } else {
+              Serial.println(F("Send fail, Test OK"));
+            }
+          }
           digitalWrite(LED_BUILTIN, HIGH);
           delay(100);
         }
@@ -9349,16 +9432,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 5 && jumlahnode[1] == 3 && jumlahnode[2] == 1 && jumlahnode[3] == 2){
         JsonObject NodeID_5 = doc[0];
@@ -9413,16 +9497,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 5 && jumlahnode[1] == 2 && jumlahnode[2] == 3 && jumlahnode[3] == 1){
         JsonObject NodeID_5 = doc[0];
@@ -9477,16 +9562,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 5 && jumlahnode[1] == 2 && jumlahnode[2] == 1 && jumlahnode[3] == 3){
         JsonObject NodeID_5 = doc[0];
@@ -9541,16 +9627,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 5 && jumlahnode[1] == 1 && jumlahnode[2] == 3 && jumlahnode[3] == 2){
         JsonObject NodeID_5 = doc[0];
@@ -9605,16 +9692,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 5 && jumlahnode[1] == 1 && jumlahnode[2] == 2 && jumlahnode[3] == 3){
         JsonObject NodeID_5 = doc[0];
@@ -9669,16 +9757,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 5 && jumlahnode[2] == 2 && jumlahnode[3] == 1){
         JsonObject NodeID_3 = doc[0];
@@ -9733,16 +9822,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 5 && jumlahnode[2] == 1 && jumlahnode[3] == 2){
         JsonObject NodeID_3 = doc[0];
@@ -9797,16 +9887,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 2 && jumlahnode[2] == 5 && jumlahnode[3] == 1){
         JsonObject NodeID_3 = doc[0];
@@ -9861,16 +9952,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 2 && jumlahnode[2] == 1 && jumlahnode[3] == 5){
         JsonObject NodeID_3 = doc[0];
@@ -9925,16 +10017,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 1 && jumlahnode[2] == 5 && jumlahnode[3] == 2){
         JsonObject NodeID_3 = doc[0];
@@ -9989,16 +10082,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 3 && jumlahnode[1] == 1 && jumlahnode[2] == 2 && jumlahnode[3] == 5){
         JsonObject NodeID_3 = doc[0];
@@ -10053,16 +10147,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 5 && jumlahnode[2] == 3 && jumlahnode[3] == 1){
         JsonObject NodeID_2 = doc[0];
@@ -10117,16 +10212,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 5 && jumlahnode[2] == 1 && jumlahnode[3] == 3){
         JsonObject NodeID_2 = doc[0];
@@ -10181,16 +10277,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 3 && jumlahnode[2] == 5 && jumlahnode[3] == 1){
         JsonObject NodeID_2 = doc[0];
@@ -10245,16 +10342,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 3 && jumlahnode[2] == 1 && jumlahnode[3] == 5){
         JsonObject NodeID_2 = doc[0];
@@ -10309,16 +10407,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 1 && jumlahnode[2] == 5 && jumlahnode[3] == 3){
         JsonObject NodeID_2 = doc[0];
@@ -10373,16 +10472,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 2 && jumlahnode[1] == 1 && jumlahnode[2] == 3 && jumlahnode[3] == 5){
         JsonObject NodeID_2 = doc[0];
@@ -10437,16 +10537,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 5 && jumlahnode[2] == 3 && jumlahnode[3] == 2){
         JsonObject NodeID_1 = doc[0];
@@ -10501,16 +10602,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 5 && jumlahnode[2] == 2 && jumlahnode[3] == 3){
         JsonObject NodeID_1 = doc[0];
@@ -10565,16 +10667,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 3 && jumlahnode[2] == 5 && jumlahnode[3] == 2){
         JsonObject NodeID_1 = doc[0];
@@ -10629,16 +10732,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 3 && jumlahnode[2] == 2 && jumlahnode[3] == 5){
         JsonObject NodeID_1 = doc[0];
@@ -10693,16 +10797,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 2 && jumlahnode[2] == 5 && jumlahnode[3] == 3){
         JsonObject NodeID_1 = doc[0];
@@ -10757,16 +10862,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
       if(jumlahnode[0] == 1 && jumlahnode[1] == 2 && jumlahnode[2] == 3 && jumlahnode[3] == 5){
         JsonObject NodeID_1 = doc[0];
@@ -10821,16 +10927,17 @@ void loop() {
         datakirim = "";
         serializeJson(doc, datakirim);
         char kirim_loop[datakirim.length() + 1];
-        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));
-        network.update();
-        RF24NetworkHeader header(/*to node*/ NODE_Master);
-        bool NODE_Master = network.write(header, &kirim_loop, sizeof(kirim_loop));
-        Serial.println(NODE_Master ? F("DATA TERKIRIM KE NODE Master") : F("GAGAL TERKIRIM KE NODE Master"));
-        if(!NODE_Master){
-          digitalWrite(LED_BUILTIN, HIGH);
-          delay(100);
+        datakirim.toCharArray(kirim_loop,sizeof(kirim_loop));        
+        if(!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop), NODE_Master)){
+          Serial.print(F("GAGAL TERKIRIM KE NODE MASTER"));
+          if (!mesh.checkConnection()) {
+            do {
+              Serial.println(F("Reconnecting to mesh network..."));
+            } while (mesh.renewAddress() == MESH_DEFAULT_ADDRESS);
+          } else {
+            Serial.println(F("Send fail, Test OK"));
+          }
         }
-        digitalWrite(LED_BUILTIN, LOW);
       }
     }
   }
