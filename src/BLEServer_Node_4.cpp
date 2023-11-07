@@ -56,6 +56,9 @@ String dataterima;
 int count = 0;
 int jumlahnode[5];
 
+//variabel new data
+bool newdata = false;
+
 //struktur daya yang dikirmkan
 struct payload_t {  // Structure of our payload
   String datakirim;
@@ -165,6 +168,7 @@ void setup() {
       }
     }
   }
+  radio.startListening();
   printf_begin();        // needed for RF24* libs' internal printf() calls
   radio.printDetails();  // requires printf support
 
@@ -254,6 +258,10 @@ void loop() {
         jumlahnode[i] += NodeID;
       }
     }
+    newdata = true;
+  }
+  if (newdata == true){
+    radio.stopListening();
     //==================================================POSISI NODE KE - 1==================================================
     if (count == 1 && jumlahnode[0] == 6) {
       Serial.print("Received packet from NODE Master");
@@ -10940,6 +10948,8 @@ void loop() {
         }
       }
     }
+    radio.stopListening();
+    newdata = false;
   }
   //pBLEScan->clearResults();   // delete results fromBLEScan buffer to release memory
 }
