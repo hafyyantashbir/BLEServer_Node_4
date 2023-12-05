@@ -1,5 +1,8 @@
 #include <Arduino.h>
 
+//library TOF
+#include <Adafruit_VL53L0X.h>
+
 //library RTC
 #include <Wire.h>
 #include "RTClib.h"
@@ -13,6 +16,70 @@
 #include <RF24Network.h>
 #include <RF24Mesh.h>
 #include "printf.h"
+
+//konfigurasi TOF
+#define LOX1_ADDRESS 0x30
+#define LOX2_ADDRESS 0x31
+#define LOX3_ADDRESS 0x32
+
+#define SHT_LOX1 26
+#define SHT_LOX2 27
+#define SHT_LOX3 25
+
+Adafruit_VL53L0X lox1 = Adafruit_VL53L0X();
+Adafruit_VL53L0X lox2 = Adafruit_VL53L0X();
+Adafruit_VL53L0X lox3 = Adafruit_VL53L0X();
+
+VL53L0X_RangingMeasurementData_t measure1;
+VL53L0X_RangingMeasurementData_t measure2;
+VL53L0X_RangingMeasurementData_t measure3;
+
+void setID() {
+  // all reset
+  digitalWrite(SHT_LOX1, LOW);    
+  digitalWrite(SHT_LOX2, LOW);
+  digitalWrite(SHT_LOX3, LOW);
+  delay(10);
+  // all unreset
+  digitalWrite(SHT_LOX1, HIGH);
+  digitalWrite(SHT_LOX2, HIGH);
+  digitalWrite(SHT_LOX3, HIGH);
+  delay(10);
+
+  // activating LOX1 and reseting LOX2
+  digitalWrite(SHT_LOX1, HIGH);
+  digitalWrite(SHT_LOX2, LOW);
+  digitalWrite(SHT_LOX3, LOW);
+
+  // initing LOX1
+  if(!lox1.begin(LOX1_ADDRESS)) {
+    Serial.println(F("Failed to boot first VL53L0X"));
+    while(1);
+  }
+  delay(10);
+
+  // activating LOX2
+  digitalWrite(SHT_LOX2, HIGH);
+  digitalWrite(SHT_LOX3, LOW);
+  delay(10);
+
+  //initing LOX2
+  if(!lox2.begin(LOX2_ADDRESS)) {
+    Serial.println(F("Failed to boot second VL53L0X"));
+    while(1);
+  }
+  delay(10);
+
+  // activating LOX3
+  digitalWrite(SHT_LOX3, HIGH);
+  delay(10);
+
+  //initing LOX2
+  if(!lox3.begin(LOX3_ADDRESS)) {
+    Serial.println(F("Failed to boot Thrid VL53L0X"));
+    while(1);
+  }
+}
 
 //konfigurasi stack size
 SET_LOOP_TASK_STACK_SIZE(64*1024); // 64KB
@@ -61,6 +128,22 @@ unsigned long currentMillis = 0;
 void setup() {
   Serial.begin(115200);
 
+  pinMode(SHT_LOX1, OUTPUT);
+  pinMode(SHT_LOX2, OUTPUT);
+  pinMode(SHT_LOX3, OUTPUT);
+
+  Serial.println(F("Shutdown pins inited..."));
+
+  digitalWrite(SHT_LOX1, LOW);
+  digitalWrite(SHT_LOX2, LOW);
+  digitalWrite(SHT_LOX3, LOW);
+
+  Serial.println(F("Both in reset mode...(pins are low)"));
+  
+  
+  Serial.println(F("Starting..."));
+  setID();
+
   //Fungsi untuk 2 loop
   //  xTaskCreatePinnedToCore(
   //    loop2,
@@ -105,29 +188,33 @@ void setup() {
 }
 
 void loop() {
-  delay(1000);
-
   // print sisa memori stack pada void loop
   Serial.printf("\nLoop() - Free Stack Space: %d", uxTaskGetStackHighWaterMark(NULL));
   
   mesh.update();
   DateTime now = rtc.now();
-  StaticJsonDocument<96> doc;
+  StaticJsonDocument<128> doc;
 
   // Mengirim data ke master
   if (millis() - currentMillis >= 1000) {
     currentMillis = millis();
-    doc["NodeID"] = node_asal;
-    doc["TofX"] = TofX;
-    doc["TofY"] = TofY;
-    doc["TofZ"] = TofZ;
-    doc["Unixtime"] = now.unixtime();
+    lox1.rangingTest(&measure1, false); // pass in 'true' to get debug data printout!
+    lox2.rangingTest(&measure2, false); // pass in 'true' to get debug data printout!
+    lox3.rangingTest(&measure3, false); // pass in 'true' to get debug data printout!
+    TofX = measure1.RangeMilliMeter;
+    TofY = measure2.RangeMilliMeter;
+    TofZ = measure3.RangeMilliMeter;
+    doc["NodeID"] = String(node_asal);
+    doc["TofX"] = String(TofX);
+    doc["TofY"] = String(TofY);
+    doc["TofZ"] = String(TofZ);
+    doc["Unixtime"] = String(now.unixtime());
     datakirim = "";
     serializeJson(doc, datakirim);
     char kirim_loop[datakirim.length() + 1];
     datakirim.toCharArray(kirim_loop, sizeof(kirim_loop));
 
-    if (!mesh.write(&kirim_loop, 'M', sizeof(kirim_loop))) {
+    if (!mesh.write(&kirim_loop, '4', sizeof(kirim_loop))) {
       if (!mesh.checkConnection()) {
         Serial.println("Memperbaharui Alamat");
         if (mesh.renewAddress() == MESH_DEFAULT_ADDRESS) {
